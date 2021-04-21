@@ -1,0 +1,243 @@
+import      numpy               as np 
+import      pandas              as pd 
+import      math 
+import      re
+import      seaborn             as sns
+import      matplotlib.pyplot   as plt 
+ 
+from        sklearn.preprocessing   import StandardScaler
+from        sklearn.metrics         import mean_squared_error
+from        sklearn.model_selection import train_test_split,    GridSearchCV
+from        sklearn.linear_model    import ElasticNet, Lasso,   Ridge,          LinearRegression, ElasticNetCV, LassoCV
+
+import warnings
+warnings.filterwarnings('ignore')
+
+data = pd.read_excel(r'/mnt/c/Users/POLIYR/Desktop/Codes/A/Datasets/Cell Data.xlsx')
+df = data.rename(columns = {'Time, Weeks' : 'Time_in_Weeks', 'Cycles': 'Cycle', 'Capacity loss, %': 'Capacity_Loss'})
+df = df.rename(str.lower, axis='columns')
+
+X = df[['time_in_weeks', 'cycle']]
+Y = df[['capacity_loss']] 
+
+lm_elastic = ElasticNet()
+lm_elastic.fit(X,Y)
+pred_test_elastic = lm_elastic.predict(X)
+lm_elastic.coef_, lm_elastic.score(X,Y) 
+
+print("R squared for Test using Elastic Net Model", np.round(lm_elastic.score(X,Y)*100, 2))
+print('MSE via Elastic Model is', " "":", mean_squared_error(Y,pred_test_elastic))
+print('RMSE via Elastic Model is', ":", np.sqrt(mean_squared_error(Y,pred_test_elastic)))
+
+r_squ_elastic_net = lm_elastic.score(X,Y)
+adj_r_squ_elastic_net = 1 - (1-r_squ_elastic_net)* (len(Y)-1)/(len(Y) - X.shape[1]-1) 
+print('Adjusted R squared via Elastic Model is ', ":", adj_r_squ_elastic_net)
+
+
+from sklearn.model_selection import GridSearchCV
+
+# Perform Grid Search for 6 values of Alpha for a best fit
+
+alpha_v = [{'alpha': [0.00001, 0.0001, 0.001, 0.01, 0.1, 1]}]
+
+from sklearn.metrics import mean_squared_error
+
+grid_search = GridSearchCV(estimator=ElasticNet(), param_grid=alpha_v, cv =10, scoring = 'neg_mean_squared_error')
+
+grid_search.fit(X,Y)
+
+grid_search.best_params_, grid_search.best_score_
+
+# Now lets use the best aplpha value 
+
+model_enet = ElasticNet(alpha = 0.00001 )
+
+model_enet.fit(X,Y)
+
+predictions = model_enet.predict(X)  
+r2 = model_enet.score(X,Y)
+adj_r_squ_elastic_net = 1 - (1-r2) * (len(Y)-1)/ (len(Y)-X.shape[1]-1)
+print('R Squared',"             "":", model_enet.score(X,Y))
+print('Adjusted R Squared',"    "":", adj_r_squ_elastic_net)
+print('RMSE for Elastic Model', ":", np.sqrt(mean_squared_error(Y, predictions))) 
+
+------------------------------------------------------------------------------------------------
+
+from sklearn.linear_model import ElasticNetCV
+
+Elastic_Net_CV = ElasticNetCV(cv=5, random_state=0)
+Elastic_Net_CV.fit(X,Y)
+Elastic_Net_CV.alpha_, Elastic_Net_CV.alphas_
+model_enet_new = ElasticNet(alpha = (Elastic_Net_CV.alpha_) )
+model_enet_new.fit(X,Y)
+new_predictions = model_enet_new.predict(X)
+r2_new = model_enet_new.score(X,Y)
+adj_r_squ_elastic_net_new = 1 - (1-r2_new) * (len(Y)-1)/ (len(Y)-X.shape[1]-1)
+
+print('R Squared_new',"             "":", model_enet_new.score(X,Y))
+print('Adjusted R Squared_new',"    "":", adj_r_squ_elastic_net)
+print('RMSE for Elastic Model_new', ":", np.sqrt(mean_squared_error(Y, new_predictions)))
+
+def Enet(alpha, input_X, input_Y):
+    # input alpha value, independent and dependent variable data 
+    # Return RMSE, R_Squared, Adj_R2_Squared
+    EN = ElasticNet(alpha = alpha)
+    EN.fit(input_X, input_Y)
+    predictions_enet = EN.predict(input_X)
+    RMSE = np.round(np.sqrt(mean_squared_error(input_Y, predictions_enet)), 6) 
+    R_Squared = np.round(EN.score(input_X, input_Y),6)
+    Adj_R_Squared = np.round( 1 - (1-R_Squared) * (len(Y)-1)/ (len(Y)-X.shape[1]-1), 6 )
+    return[RMSE,R_Squared, Adj_R_Squared ] 
+
+metrics_1 = Enet(alpha = 1.059123572844213, input_X = X, input_Y = Y )
+metrics_2 = Enet(alpha = 0.001, input_X = X, input_Y = Y )
+metrics_3 = Enet(alpha = 0.01, input_X = X, input_Y = Y ) 
+
+pd.DataFrame({  'metrics_1' : metrics_1 ,
+                'metrics_2' : metrics_2,
+                'metrics_3' : metrics_3}, index = ['RMSE', 'R_Squared', 'Adj_R_Squared'])
+
+--------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------
+
+
+class SRE:
+    def __init__(self, a, b, m, mc, mc_ml):
+        self.a = a
+        self.b = b
+        self.m = m 
+        self.mc = mc
+        self.mc_ml = mc_ml
+
+        # potential add
+        self.multi_sre_df = None
+
+    def expandgrid(self):
+        product =   list(itertools.product(list(np.ravel(self.a)), list(np.ravel(self.b)), list(np.ravel(self.m))))
+        df      =   pd.DataFrame(product)
+        arr_a   =   np.array(df[0]) # rate constant - [0.00001, 0.1] 
+        arr_b   =   np.array(df[1]) # lli - [0.5,1]  LAM - [2,3]
+        arr_m   =   np.array(df[2]) # lli - [10%,20%], LAM - [10%,40%]  -- 
+        return arr_a,arr_b,arr_m
+
+    @staticmethod
+    def single_sre(a, b, m, mc):
+        try:
+            z = 1 + math.exp(np.power(np.multiply(a,mc),b) )
+            f = 2 * m * (0.5-1/z)
+            return f
+        except OverflowError:
+            z = float('inf')
+            return z 
+
+    def dataframe_of_inputs(self):
+
+        sre_input_df    =   pd.DataFrame({'a' : pd.Series(self.a), 
+                                          'b' : pd.Series(self.b),
+                                          'm' : pd.Series(self.m) })
+
+        array_input     =   np.meshgrid(self.a, self.b, self.m) 
+
+        return array_input, sre_input_df
+
+    def multiple_SRE(self, a, b, m, mc): 
+
+        fout = {}
+        new_a, new_b, new_m = self.expandgrid()
+        for i in range(len(self.mc)):
+            z = np.exp(np.power(np.multiply(new_a, self.mc[i]), new_b))
+            f = np.multiply(2, np.multiply(new_m, np.subtract(0.5, np.divide(1, np.add(1,z)))))
+            fout.update({i:f})
+        multi_sre_df = pd.DataFrame(fout).T 
+        multi_sre_df.index = ['mc{}'.format(i) for i in range(len(fout.keys()))]
+        new_input_df = pd.DataFrame({'new_a': new_a,
+                                     'new_b': new_b,
+                                     'new_m': new_m  })
+                                      
+        self.multi_sre_df = multi_sre_df
+        return multi_sre_df, fout, new_input_df
+--------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------
+class modeling(SRE):
+
+    def __init__(self, cv, random_state, l1_ratio):
+
+        self.data = self.get_data()
+        self.X = self.data['cycles']
+        self.Y = self.data['capacity_loss']
+
+        self.cv = cv
+         '''None is used for 5 as defualt''' 
+        self.l1_ratio = l1_ratio
+         ''''l1_ratio = 0 ---- L2 penalty (Ridge) 
+                l1_ratio = 1  --- L1 penalty. (Lasso)
+                0 < l1_ratio < 1,  ---- combination of L1 and L2  (ElasticNet) '''
+        self.random_state = random_state
+        self.X_train, 
+        self.X_test,   
+        self.Y_train, 
+        self.Y_test = train_test_split( self.X, self.Y, 
+                                        test_size = 0.1,                                                                                             random_state = self.random_state)
+        self.X_train    = np.array(self.X_train).reshape(-1,1)
+        self.X_test     = np.array(self.X_test).reshape(-1,1)
+        self.Y_train    = np.array(self.Y_train).reshape(-1,1)
+        self.Y_test     = np.array(self.Y_test).reshape(-1,1)
+
+    def get_data(self): # add variables a, b, m, mc, mc_ml
+        # init an SRE class with a,b,m,mc, mc_ml 
+        # change to multi_SRE
+        # set to X_train
+        single_sre_output = {}
+        a = 1.0, 
+        b = 1.0,
+        m = 1.0,
+        for i in range(0,501):
+            single_sre_output.update({i:self.single_sre(a,b,m,mc=i)})
+            df = pd.DataFrame(single_sre_output, index=[0]).T
+            df.reset_index(inplace=True)
+            df.columns = ['cycles', 'capacity_loss']
+        return df                                     
+ 
+    def elastic_net_cv(self):
+        # add in 
+        ECV = ElasticNetCV( l1_ratio        = self.l1_ratio,
+                            cv              = self.cv, 
+                            random_state    = self.random_state)
+        ECV.fit(self.X_train, self.Y_train)
+        best_alpha = ECV.alpha_
+        return best_alpha 
+
+    def eNet(self):
+        Elastic_Net_CV = ElasticNetCV(l1_ratio = l1_ratio.self, cv=self.cv, random_state=self.random_state)
+        ElasticNetCV.fit(self.X_train, self.Y_train)
+
+        # add best_alpha
+        #### add coefficients
+        # add best_alpha
+        predictions_train   = Elastic_Net_CV.predict(self.X_train) 
+        predictions_test    = Elastic_Net_CV.predict(self.X_test)
+
+        RMSE_train     = np.round(np.sqrt(mean_squared_error(self.Y_train, predictions_train)), 4 )
+        RMSE_test      = np.round(np.sqrt(mean_squared_error(self.Y_test, predictions_test)), 4 )
+
+        R_Sq_train     = np.round(Elastic_Net_CV.score(self.X_train, self.Y_train), 4 )
+        R_Sq_test      = np.round(Elastic_Net_CV.score(self.X_test, self.Y_test), 4 )
+
+        Adj_R_Sq_train  = np.round(1-(1-R_Sq_train) * 
+                            (len(self.Y_train)-1) / (len(self.Y_train) - self.X_train.shape[1]-1), 4 )
+        Adj_R_Sq_test  = np.round(1-(1-R_Sq_test) * 
+                            (len(self.Y_test)-1) / (len(self.Y_test) - self.X_test.shape[1]-1), 4 )
+
+        results_metrics = pd.DataFrame({ 'Training Metrics': [RMSE_train, R_Sq_train, Adj_R_Sq_train],
+                                           'Training Metrics': [RMSE_test,  R_Sq_test,  Adj_R_Sq_test ]}, 
+                                                index = ['RMSE', 'R_Squared', 'Adj_R_Squared'])
+        return results_metrics # as dict
+
+if __name__ == '__main__':
+
+    model = modeling( cv = 5, random_state  = 0, l1_ratio = 0)             
+    metrics = model.eNet()
+                             
+
+
+
